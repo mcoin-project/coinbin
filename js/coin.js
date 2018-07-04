@@ -10,10 +10,16 @@
 	var coinjs = window.coinjs = function () { };
 
 	/* public vars */
-	coinjs.pub = 0x00;
-	coinjs.priv = 0x80;
-	coinjs.multisig = 0x05;
-	coinjs.hdkey = {'prv':0x0488ade4, 'pub':0x0488b21e};
+	//coinjs.pub = 0x00;  // pubKeyHash
+	//coinjs.pub = 0x6f;  // pubKeyHash Decimal 111 mcoin mainnet
+	coinjs.pub = 0x30;  // pubKeyHash Decimal 48 mcoin testnet
+	//coinjs.priv = 0x80; // Wif
+	//coinjs.priv = 0xEF; // Wif mainnet decimal 239 ??
+	coinjs.priv = 0xB0; // Wif testnet decimal 176
+	coinjs.multisig = 0x05; // scriptHash
+	//coinjs.hdkey = {'prv':0x0488ade4, 'pub':0x0488b21e};
+	//coinjs.hdkey = {'prv':0x0699ade4, 'pub':0x0699b21e};  // mCoin mainnet
+	coinjs.hdkey = {'prv':0x08aaade4, 'pub':0x08aab21e};  // mCoin testnet
 	coinjs.bech32 = {'charset':'qpzry9x8gf2tvdw0s3jn54khce6mua7l', 'version':0, 'hrp':'bc'};
 
 	coinjs.compressed = false;
@@ -22,7 +28,8 @@
 	coinjs.developer = '3K1oFZMks41C7qDYBsr72SYjapLqDuSYuN'; //bitcoin
 
 	/* bit(coinb.in) api vars */
-	coinjs.host = ('https:'==document.location.protocol?'https://':'http://')+'coinb.in/api/';
+	//coinjs.host = ('https:'==document.location.protocol?'https://':'http://')+'coinb.in/api/';
+	coinjs.host = ('https:'==document.location.protocol?'https://':'http://')+'mcoin.dhq.onem:3001/insight-lite-api/';
 	coinjs.uid = '1';
 	coinjs.key = '12345678901234567890123456789012';
 
@@ -316,7 +323,8 @@
 
 	/* retreive the balance from a given address */
 	coinjs.addressBalance = function(address, callback){
-		coinjs.ajax(coinjs.host+'?uid='+coinjs.uid+'&key='+coinjs.key+'&setmodule=addresses&request=bal&address='+address+'&r='+Math.random(), callback, "GET");
+		//coinjs.ajax(coinjs.host+'?uid='+coinjs.uid+'&key='+coinjs.key+'&setmodule=addresses&request=bal&address='+address+'&r='+Math.random(), callback, "GET");
+		coinjs.ajax(coinjs.host+'addr/'+address, callback, "GET");
 	}
 
 	/* decompress an compressed public key */
@@ -1025,7 +1033,8 @@
 
 		/* list unspent transactions */
 		r.listUnspent = function(address, callback) {
-			coinjs.ajax(coinjs.host+'?uid='+coinjs.uid+'&key='+coinjs.key+'&setmodule=addresses&request=unspent&address='+address+'&r='+Math.random(), callback, "GET");
+			//coinjs.ajax(coinjs.host+'?uid='+coinjs.uid+'&key='+coinjs.key+'&setmodule=addresses&request=unspent&address='+address+'&r='+Math.random(), callback, "GET");
+			coinjs.ajax(coinjs.host+'addr/'+address+'/utxo', callback, "GET");
 		}
 
 		/* add unspent to transaction */
@@ -1034,25 +1043,23 @@
 			this.listUnspent(address, function(data){
 				var s = coinjs.script();
 				var value = 0;
-				var total = 0;
 				var x = {};
 
-				if (window.DOMParser) {
-					parser=new DOMParser();
-					xmlDoc=parser.parseFromString(data,"text/xml");
-				} else {
-					xmlDoc=new ActiveXObject("Microsoft.XMLDOM");
-					xmlDoc.async=false;
-					xmlDoc.loadXML(data);
+				var result = [];
+
+				try {
+					result = JSON.parse(data);
+				} catch {
+					console.log("error parsing results")
 				}
 
-				var unspent = xmlDoc.getElementsByTagName("unspent")[0];
 
-				for(i=1;i<=unspent.childElementCount;i++){
-					var u = xmlDoc.getElementsByTagName("unspent_"+i)[0]
-					var txhash = (u.getElementsByTagName("tx_hash")[0].childNodes[0].nodeValue).match(/.{1,2}/g).reverse().join("")+'';
-					var n = u.getElementsByTagName("tx_output_n")[0].childNodes[0].nodeValue;
-					var scr = script || u.getElementsByTagName("script")[0].childNodes[0].nodeValue;
+				//var unspent = xmlDoc.getElementsByTagName("unspent")[0];
+
+				for(i=0;i<result.length;i++){
+					var txhash = result[i].txid.match(/.{1,2}/g).reverse().join("")+'';
+					var n = result[i].satoshis;
+					var scr = script || result[i].scriptPubKey;
 
 					if(segwit){
 						/* this is a small hack to include the value with the redeemscript to make the signing procedure smoother. 
@@ -1067,13 +1074,13 @@
 
 					var seq = sequence || false;
 					self.addinput(txhash, n, scr, seq);
-					value += u.getElementsByTagName("value")[0].childNodes[0].nodeValue*1;
-					total++;
+					value += n;
 				}
-
+				console.log("x:");
+				console.log(x);
 				x.unspent = $(xmlDoc).find("unspent");
 				x.value = value;
-				x.total = total;
+				x.total = result.length;
 				return callback(x);
 			});
 		}
@@ -1091,7 +1098,13 @@
 		/* broadcast a transaction */
 		r.broadcast = function(callback, txhex){
 			var tx = txhex || this.serialize();
-			coinjs.ajax(coinjs.host+'?uid='+coinjs.uid+'&key='+coinjs.key+'&setmodule=bitcoin&request=sendrawtransaction&rawtx='+tx+'&r='+Math.random(), callback, "GET");
+			var b = {
+				rawtx: tx
+			};
+			var body = JSON.stringify(b);
+			console.log("broadcast");
+			//coinjs.ajax(coinjs.host+'?uid='+coinjs.uid+'&key='+coinjs.key+'&setmodule=bitcoin&request=sendrawtransaction&rawtx='+tx+'&r='+Math.random(), callback, "GET");
+			coinjs.ajax(coinjs.host+'tx/send', callback, "POST", body);
 		}
 
 		/* generate the transaction hash to sign from a transaction input */
@@ -1888,7 +1901,8 @@
 		};
 
 		if(m == 'POST'){
-			x.setRequestHeader('Content-type','application/x-www-form-urlencoded');
+			//x.setRequestHeader('Content-type','application/x-www-form-urlencoded');
+			x.setRequestHeader('Content-type','application/json');
 		}
 
 		x.send(a);

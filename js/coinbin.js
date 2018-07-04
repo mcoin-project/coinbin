@@ -2,9 +2,9 @@ $(document).ready(function() {
 
 	/* open wallet code */
 
-	var explorer_tx = "https://coinb.in/tx/"
-	var explorer_addr = "https://coinb.in/addr/"
-	var explorer_block = "https://coinb.in/block/"
+	var explorer_tx = "https://mcoin.dhq.onem:3001/insight-lite-api/tx/"
+	var explorer_addr ="https://mcoin.dhq.onem:3001/insight-lite-api/addr/"
+	var explorer_block = "https://mcoin.dhq.onem:3001/insight-lite-api/block/"
 
 	var wallet_timer = false;
 
@@ -300,11 +300,24 @@ $(document).ready(function() {
 		var tx = coinjs.transaction();
 		$("#walletLoader").removeClass("hidden");
 		coinjs.addressBalance($("#walletAddress").html(),function(data){
-			if($(data).find("result").text()==1){
-				var v = $(data).find("balance").text()/100000000;
-				$("#walletBalance").html(v+" BTC").attr('rel',v).fadeOut().fadeIn();
+
+			console.log("data:");
+			console.log(data);
+
+			var balanceSat;
+			try {
+				result = JSON.parse(data);
+				balanceSat = result.balanceSat;
+			} catch {
+				balanceSat = undefined;
+			}
+
+			if(balanceSat){
+				var v = balanceSat / 100000000;
+				$("#walletBalance").html(v+" MCN").attr('rel',v).fadeOut().fadeIn();
 			} else {
-				$("#walletBalance").html("0.00 BTC").attr('rel',v).fadeOut().fadeIn();
+				console.log("else case");
+				$("#walletBalance").html("0.00 MCN").attr('rel',v).fadeOut().fadeIn();
 			}
 
 			$("#walletLoader").addClass("hidden");
@@ -997,30 +1010,60 @@ $(document).ready(function() {
 		}
 	}
 
-	/* default function to retreive unspent outputs*/	
+	// /* default function to retreive unspent outputs*/	
+	// function listUnspentDefault(redeem){
+	// 	var tx = coinjs.transaction();
+	// 	tx.listUnspent(redeem.addr, function(data){
+	// 		if(redeem.addr) {
+	// 			$("#redeemFromAddress").removeClass('hidden').html('<span class="glyphicon glyphicon-info-sign"></span> Retrieved unspent inputs from address <a href="'+explorer_addr+redeem.addr+'" target="_blank">'+redeem.addr+'</a>');
+
+	// 			$.each($(data).find("unspent").children(), function(i,o){
+	// 				var tx = $(o).find("tx_hash").text();
+	// 				var n = $(o).find("tx_output_n").text();
+	// 				var script = (redeem.redeemscript==true) ? redeem.decodedRs : $(o).find("script").text();
+	// 				var amount = (($(o).find("value").text()*1)/100000000).toFixed(8);
+
+	// 				addOutput(tx, n, script, amount);
+	// 			});
+	// 		}
+
+	// 		$("#redeemFromBtn").html("Load").attr('disabled',false);
+	// 		totalInputAmount();
+
+	// 		mediatorPayment(redeem);
+	// 	});
+	// }
+
+	/* retrieve unspent data from chainso for mCoin */
 	function listUnspentDefault(redeem){
-		var tx = coinjs.transaction();
-		tx.listUnspent(redeem.addr, function(data){
-			if(redeem.addr) {
-				$("#redeemFromAddress").removeClass('hidden').html('<span class="glyphicon glyphicon-info-sign"></span> Retrieved unspent inputs from address <a href="'+explorer_addr+redeem.addr+'" target="_blank">'+redeem.addr+'</a>');
-
-				$.each($(data).find("unspent").children(), function(i,o){
-					var tx = $(o).find("tx_hash").text();
-					var n = $(o).find("tx_output_n").text();
-					var script = (redeem.redeemscript==true) ? redeem.decodedRs : $(o).find("script").text();
-					var amount = (($(o).find("value").text()*1)/100000000).toFixed(8);
-
-					addOutput(tx, n, script, amount);
-				});
+		$.ajax ({
+			type: "GET",
+			url: explorer_addr+redeem.addr+'/utxo',
+			dataType: "json",
+			error: function(data) {
+				$("#redeemFromStatus").removeClass('hidden').html('<span class="glyphicon glyphicon-exclamation-sign"></span> Unexpected error, unable to retrieve unspent outputs!');
+			},
+			success: function(data) {
+				if((data.status && data.data) && data.status=='success'){
+					$("#redeemFromAddress").removeClass('hidden').html('<span class="glyphicon glyphicon-info-sign"></span> Retrieved unspent inputs from address <a href="'+explorer_addr+redeem.addr+'" target="_blank">'+redeem.addr+'</a>');
+					for(var i in data.data.txs){
+						var o = data.data.txs[i];
+						var tx = ((o.txid).match(/.{1,2}/g).reverse()).join("")+'';
+						var n = o.output_no;
+						var script = (redeem.redeemscript==true) ? redeem.decodedRs : o.script_hex;
+						var amount = o.value;
+						addOutput(tx, n, script, amount);
+					}
+				} else {
+					$("#redeemFromStatus").removeClass('hidden').html('<span class="glyphicon glyphicon-exclamation-sign"></span> Unexpected error, unable to retrieve unspent outputs.');
+				}
+			},
+			complete: function(data, status) {
+				$("#redeemFromBtn").html("Load").attr('disabled',false);
+				totalInputAmount();
 			}
-
-			$("#redeemFromBtn").html("Load").attr('disabled',false);
-			totalInputAmount();
-
-			mediatorPayment(redeem);
 		});
 	}
-
 
 	/* retrieve unspent data from chainso for litecoin */
 	function listUnspentChainso_Litecoin(redeem){
@@ -1182,13 +1225,15 @@ $(document).ready(function() {
 
 	// broadcast transaction vai coinbin (default)
 	function rawSubmitDefault(btn){ 
+		console.log("rawSubmitDefault");
 		var thisbtn = btn;		
 		$(thisbtn).val('Please wait, loading...').attr('disabled',true);
 		$.ajax ({
 			type: "POST",
-			url: coinjs.host+'?uid='+coinjs.uid+'&key='+coinjs.key+'&setmodule=bitcoin&request=sendrawtransaction',
+			//url: coinjs.host+'?uid='+coinjs.uid+'&key='+coinjs.key+'&setmodule=bitcoin&request=sendrawtransaction',
+			url: coinjs.host+'tx/send',
 			data: {'rawtx':$("#rawTransaction").val()},
-			dataType: "xml",
+			dataType: "json",
 			error: function(data) {
 				$("#rawTransactionStatus").addClass('alert-danger').removeClass('alert-success').removeClass("hidden").html(" There was an error submitting your request, please try again").prepend('<span class="glyphicon glyphicon-exclamation-sign"></span>');
 			},
@@ -2044,6 +2089,7 @@ $(document).ready(function() {
 		}
 	};
 
+	// TODO use mcoin fees api
 	function feeStats(){
 		$("#feeStatsReload").attr('disabled',true);
 		$.ajax ({
